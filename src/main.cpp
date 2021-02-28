@@ -258,9 +258,9 @@ private:
 
         _this->channel_layout   = BLADERF_RX_X1;
         _this->format           = BLADERF_FORMAT_SC16_Q11;
-        _this->num_buffers      = 4;
-        _this->buffer_size      = 179200; // 1024 Samples
-        _this->num_transfers    = 2;
+        _this->num_buffers      = 8;
+        _this->buffer_size      = roundf(((float)_this->sampleRateList[_this->srId]/200.0) / 1024) * 1024; // 1024 Samples
+        _this->num_transfers    = 4;
         _this->stream_timeout   = 3500; // Milliseconds
 
         bladerf_sync_config(
