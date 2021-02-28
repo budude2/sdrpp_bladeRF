@@ -133,8 +133,7 @@ public:
             created = true;
             config.conf["devices"][selectedSerial]["sampleRate"] = 800000;
             config.conf["devices"][selectedSerial]["agcMode"] = 0;
-            config.conf["devices"][selectedSerial]["lna"] = false;
-            config.conf["devices"][selectedSerial]["lnaGain"] = 0;
+            config.conf["devices"][selectedSerial]["lna"] = 0;
             config.conf["devices"][selectedSerial]["rxvga1"] = 5;
             config.conf["devices"][selectedSerial]["rxvga2"] = 0;
         }
@@ -158,10 +157,7 @@ public:
             agcMode = config.conf["devices"][selectedSerial]["agcMode"];
         }
         if (config.conf["devices"][selectedSerial].contains("lna")) {
-            hfLNA = config.conf["devices"][selectedSerial]["lna"];
-        }
-        if (config.conf["devices"][selectedSerial].contains("lnaGain")) {
-            LNAgain = config.conf["devices"][selectedSerial]["lnaGain"];
+            lna = config.conf["devices"][selectedSerial]["lna"];
         }
         if (config.conf["devices"][selectedSerial].contains("rxvga1")) {
             rxvga1 = config.conf["devices"][selectedSerial]["rxvga1"];
@@ -357,13 +353,13 @@ private:
         ImGui::Text("LNA Gain");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
-        if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_lnaGain_", _this->name), &_this->LNAgain, 0, 6, 3, "%.0f dB")) {
+        if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_lna_", _this->name), &_this->lna, 0, 6, 3, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, 0, "lna", _this->LNAgain);
+                bladerf_set_gain_stage(_this->dev, 0, "lna", _this->lna);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
-                config.conf["devices"][_this->selectedSerial]["lnaGain"] = _this->LNAgain;
+                config.conf["devices"][_this->selectedSerial]["lna"] = _this->lna;
                 config.release(true);
             }
         }
@@ -429,7 +425,7 @@ private:
     int srId        = 0;
     int agcMode     = AGC_MODE_OFF;
     bool hfLNA      = false;
-    float LNAgain   = 0;
+    float lna       = 0;
     float rxvga1    = 5;
     float rxvga2    = 0;
 
