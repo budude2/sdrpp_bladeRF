@@ -134,7 +134,9 @@ public:
             config.conf["devices"][selectedSerial]["sampleRate"] = 800000;
             config.conf["devices"][selectedSerial]["agcMode"] = 0;
             config.conf["devices"][selectedSerial]["lna"] = false;
-            config.conf["devices"][selectedSerial]["attenuation"] = 0;
+            config.conf["devices"][selectedSerial]["lnaGain"] = 0;
+            config.conf["devices"][selectedSerial]["rxvga1"] = 5;
+            config.conf["devices"][selectedSerial]["rxvga2"] = 0;
         }
 
         // Load sample rate
@@ -158,8 +160,14 @@ public:
         if (config.conf["devices"][selectedSerial].contains("lna")) {
             hfLNA = config.conf["devices"][selectedSerial]["lna"];
         }
-        if (config.conf["devices"][selectedSerial].contains("attenuation")) {
-            atten = config.conf["devices"][selectedSerial]["attenuation"];
+        if (config.conf["devices"][selectedSerial].contains("lnaGain")) {
+            LNAgain = config.conf["devices"][selectedSerial]["lnaGain"];
+        }
+        if (config.conf["devices"][selectedSerial].contains("rxvga1")) {
+            rxvga1 = config.conf["devices"][selectedSerial]["rxvga1"];
+        }
+        if (config.conf["devices"][selectedSerial].contains("rxvga2")) {
+            rxvga2 = config.conf["devices"][selectedSerial]["rxvga2"];
         }
 
         config.release(created);
@@ -234,9 +242,9 @@ private:
 
         spdlog::info("Sample rate set to {0}", actualRate);
 
-        status = bladerf_set_bandwidth(_this->dev, BLADERF_CHANNEL_RX(0), 20000000, NULL);
+        status = bladerf_set_bandwidth(_this->dev, BLADERF_CHANNEL_RX(0), 28000000, NULL);
         if (status != 0) {
-            fprintf(stderr, "Failed to set bandwidth = %u: %s\n", 10000000,
+            fprintf(stderr, "Failed to set bandwidth = %u: %s\n", 28000000,
             bladerf_strerror(status));
             return;
         }
@@ -250,10 +258,10 @@ private:
 
         _this->channel_layout   = BLADERF_RX_X1;
         _this->format           = BLADERF_FORMAT_SC16_Q11;
-        _this->num_buffers      = 8;
-        _this->buffer_size      = 2048; // 1024 Samples
-        _this->num_transfers    = 4;
-        _this->stream_timeout   = 1000; // Milliseconds
+        _this->num_buffers      = 128;
+        _this->buffer_size      = 8192; // 1024 Samples
+        _this->num_transfers    = 32;
+        _this->stream_timeout   = 3500; // Milliseconds
 
         bladerf_sync_config(
             _this->dev,
@@ -293,6 +301,7 @@ private:
     
     static void tune(double freq, void* ctx) {
         bladeRFSourceModule* _this = (bladeRFSourceModule*)ctx;
+        _this->freq = freq;
         int status;
         if (_this->running) {
             status = bladerf_set_frequency(_this->dev, 0, _this->freq);
@@ -302,7 +311,6 @@ private:
                 return;
             }
         }
-        _this->freq = freq;
         spdlog::info("bladeRFSourceModule '{0}': Tune: {1}!", _this->name, freq);
     }
     
@@ -346,47 +354,47 @@ private:
 
         if (_this->running) { style::endDisabled(); }
 
-//         ImGui::Text("AGC Mode");
-//         ImGui::SameLine();
-//         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
-//         if (ImGui::Combo(CONCAT("##_bladeRF_agc_", _this->name), &_this->agcMode, AGG_MODES_STR)) {
-//             if (_this->running) {
-//                 airspyhf_set_hf_agc(_this->openDev, (_this->agcMode != 0));
-//                 if (_this->agcMode > 0) {
-//                     airspyhf_set_hf_agc_threshold(_this->openDev, _this->agcMode - 1);
-//                 }
-//             }
-//             if (_this->selectedSerStr != "") {
-//                 config.aquire();
-//                 config.conf["devices"][_this->selectedSerStr]["agcMode"] = _this->agcMode;
-//                 config.release(true);
-//             }
-//         }
+        ImGui::Text("LNA Gain");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_lnaGain_", _this->name), &_this->LNAgain, 0, 6, 3, "%.0f dB")) {
+            if (_this->running) {
+                bladerf_set_gain_stage(_this->dev, 0, "lna", _this->LNAgain);
+            }
+            if (_this->selectedSerial != "") {
+                config.aquire();
+                config.conf["devices"][_this->selectedSerial]["lnaGain"] = _this->LNAgain;
+                config.release(true);
+            }
+        }
+        
+        ImGui::Text("rxVGA1 Gain");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga1_", _this->name), &_this->rxvga1, 5, 30, 1, "%.0f dB")) {
+            if (_this->running) {
+                bladerf_set_gain_stage(_this->dev, 0, "rxvga1", _this->rxvga1);
+            }
+            if (_this->selectedSerial != "") {
+                config.aquire();
+                config.conf["devices"][_this->selectedSerial]["rxvga1"] = _this->rxvga1;
+                config.release(true);
+            }
+        }
 
-//         ImGui::Text("HF LNA");
-//         ImGui::SameLine();
-//         if (ImGui::Checkbox(CONCAT("##_bladeRF_lna_", _this->name), &_this->hfLNA)) {
-//             if (_this->running) {
-//                 airspyhf_set_hf_lna(_this->openDev, _this->hfLNA);
-//             }      
-//             if (_this->selectedSerStr != "") {
-//                 config.aquire();
-//                 config.conf["devices"][_this->selectedSerStr]["lna"] = _this->hfLNA;
-//                 config.release(true);uint64_t
-
-//         ImGui::Text("Attenuation");
-//         ImGui::SameLine();
-//         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
-//         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_attn_", _this->name), &_this->atten, 0, 48, 6, "%.0f dB")) {
-//             if (_this->running) {
-//                 bladeRF_set_hf_att(_this->openDev, _this->atten / 6.0f);
-//             }
-//             if (_this->selectedSerStr != "") {
-//                 config.aquire();
-//                 config.conf["devices"][_this->selectedSerStr]["attenuation"] = _this->atten;
-//                 config.release(true);
-//             }
-//         }        
+        ImGui::Text("rxVGA2 Gain");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga2_", _this->name), &_this->rxvga2, 0, 30, 1, "%.0f dB")) {
+            if (_this->running) {
+                bladerf_set_gain_stage(_this->dev, 0, "rxvga2", _this->rxvga2);
+            }
+            if (_this->selectedSerial != "") {
+                config.aquire();
+                config.conf["devices"][_this->selectedSerial]["rxvga2"] = _this->rxvga2;
+                config.release(true);
+            }
+        }  
     }
 
     static void worker(void* ctx) {
@@ -421,7 +429,9 @@ private:
     int srId        = 0;
     int agcMode     = AGC_MODE_OFF;
     bool hfLNA      = false;
-    float atten     = 0.0f;
+    float LNAgain   = 0;
+    float rxvga1    = 5;
+    float rxvga2    = 0;
 
     bladerf_channel_layout  channel_layout;
     bladerf_format          format;
