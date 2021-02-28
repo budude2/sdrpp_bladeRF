@@ -277,6 +277,10 @@ private:
             return;
         }
 
+        bladerf_set_gain_stage(_this->dev, 0, "lna", _this->lna);
+        bladerf_set_gain_stage(_this->dev, 0, "rxvga1", _this->rxvga1);
+        bladerf_set_gain_stage(_this->dev, 0, "rxvga2", _this->rxvga2);
+
         _this->running = true;
         _this->workerThread = std::thread(worker, _this);
         spdlog::info("bladeRFSourceModule '{0}': Start!", _this->name);
