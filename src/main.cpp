@@ -443,8 +443,8 @@ private:
                 spdlog::error(bladerf_strerror(status));
             }
             for (int i = 0; i < _this->buffer_size; i++) {
-                _this->stream.writeBuf[i].q = (float)inBuf[i * 2] / (float)65536;
-                _this->stream.writeBuf[i].i = (float)inBuf[(i * 2) + 1] / (float)65536;
+                _this->stream.writeBuf[i].q = (float)inBuf[i * 2] / (float)4096;
+                _this->stream.writeBuf[i].i = (float)inBuf[(i * 2) + 1] / (float)4096;
             }
             if (!_this->stream.swap(_this->buffer_size)) { break; };
         }
