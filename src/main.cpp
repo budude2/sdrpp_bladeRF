@@ -22,14 +22,17 @@ SDRPP_MOD_INFO {
 
 ConfigManager config;
 
-const char* AGG_MODES_STR = "Off\0Low\0High\0";
+const char* AGG_MODES_STR = "Off\0On\0";
+const char* XB_BOARD_STR = "None\0XB-100\0XB-200\0XB-300\0";
+const char* XB_200_STR = "50M\000144M\000222M\0CUSTOM\0AUTO_1DB\0AUTO_3DB\0";
+
 
 class bladeRFSourceModule : public ModuleManager::Instance {
 public:
     bladeRFSourceModule(std::string name) {
         this->name = name;
 
-        sampleRate = 300000;
+        sampleRate = 800000;
 
         handler.ctx                 = this;
         handler.selectHandler       = menuSelected;
@@ -54,12 +57,6 @@ public:
     ~bladeRFSourceModule() {
         
     }
-
-    enum AGCMode {
-        AGC_MODE_OFF,
-        AGC_MODE_LOW,
-        AGC_MODE_HIGG
-    };
 
     void enable() {
         enabled = true;
@@ -136,6 +133,7 @@ public:
             config.conf["devices"][selectedSerial]["lna"] = 0;
             config.conf["devices"][selectedSerial]["rxvga1"] = 5;
             config.conf["devices"][selectedSerial]["rxvga2"] = 0;
+            config.conf["devices"][selectedSerial]["xbMode"] = 0;
         }
 
         // Load sample rate
@@ -153,8 +151,8 @@ public:
         }
 
         // Load Gains
-        if (config.conf["devices"][selectedSerial].contains("agcMode")) {
-            agcMode = config.conf["devices"][selectedSerial]["agcMode"];
+        if (config.conf["devices"][selectedSerial].contains("xbMode")) {
+            xbMode = config.conf["devices"][selectedSerial]["xbMode"];
         }
         if (config.conf["devices"][selectedSerial].contains("lna")) {
             lna = config.conf["devices"][selectedSerial]["lna"];
@@ -255,7 +253,7 @@ private:
         _this->channel_layout   = BLADERF_RX_X1;
         _this->format           = BLADERF_FORMAT_SC16_Q11;
         _this->num_buffers      = 16;
-        _this->buffer_size      = roundf(((float)_this->sampleRateList[_this->srId]/200.0) / 1024) * 1024; // 1024 Samples
+        _this->buffer_size      = roundf(((float)_this->sampleRateList[_this->srId]/200.0) / 1024) * 1024;
         _this->num_transfers    = 8;
         _this->stream_timeout   = 3500; // Milliseconds
 
@@ -277,9 +275,19 @@ private:
             return;
         }
 
-        bladerf_set_gain_stage(_this->dev, 0, "lna", _this->lna);
-        bladerf_set_gain_stage(_this->dev, 0, "rxvga1", _this->rxvga1);
-        bladerf_set_gain_stage(_this->dev, 0, "rxvga2", _this->rxvga2);
+        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "lna", _this->lna);
+        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga1", _this->rxvga1);
+        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga2", _this->rxvga2);
+
+        if(_this->xbMode == BLADERF_XB_200)
+        {
+            bladerf_expansion_attach(_this->dev, BLADERF_XB_200);
+            bladerf_xb200_set_path(_this->dev, BLADERF_CHANNEL_RX(0), BLADERF_XB200_MIX);
+            bladerf_xb200_set_filterbank(_this->dev, BLADERF_CHANNEL_RX(0), (bladerf_xb200_filter)_this->xb200Mode);
+        }
+        else {
+            bladerf_xb200_set_path(_this->dev, BLADERF_CHANNEL_RX(0), BLADERF_XB200_BYPASS);
+        }
 
         _this->running = true;
         _this->workerThread = std::thread(worker, _this);
@@ -352,6 +360,31 @@ private:
             core::setInputSampleRate(_this->sampleRate);
         }
 
+        ImGui::Text("Expansion Board");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (ImGui::Combo(CONCAT("##_bladeRF_xb_", _this->name), &_this->xbMode, XB_BOARD_STR)) {
+            if (_this->selectedSerial != "") {
+                config.aquire();
+                config.conf["devices"][_this->selectedSerial]["xbMode"] = _this->xbMode;
+                config.release(true);
+            }
+        }
+
+        if(_this->xbMode == BLADERF_XB_200)
+        {
+            ImGui::Text("XB-200 Filtering");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+            if (ImGui::Combo(CONCAT("##_bladeRF_xb200_", _this->name), &_this->xb200Mode, XB_200_STR)) {
+                // if (_this->selectedSerial != "") {
+                //     config.aquire();
+                //     config.conf["devices"][_this->selectedSerial]["xbMode"] = _this->xbMode;
+                //     config.release(true);
+                // }
+            }
+        }
+
         if (_this->running) { style::endDisabled(); }
 
         ImGui::Text("LNA Gain");
@@ -359,7 +392,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_lna_", _this->name), &_this->lna, 0, 6, 3, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, 0, "lna", _this->lna);
+                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "lna", _this->lna);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -373,7 +406,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga1_", _this->name), &_this->rxvga1, 5, 30, 1, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, 0, "rxvga1", _this->rxvga1);
+                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga1", _this->rxvga1);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -387,7 +420,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga2_", _this->name), &_this->rxvga2, 0, 30, 1, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, 0, "rxvga2", _this->rxvga2);
+                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga2", _this->rxvga2);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -427,7 +460,8 @@ private:
     std::string selectedSerial = "";
     int devId       = 0;
     int srId        = 0;
-    int agcMode     = AGC_MODE_OFF;
+    int xbMode      = BLADERF_XB_NONE;
+    int xb200Mode   = BLADERF_XB200_AUTO_1DB;
     bool hfLNA      = false;
     float lna       = 0;
     float rxvga1    = 5;
