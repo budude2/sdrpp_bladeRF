@@ -125,12 +125,24 @@ public:
             sampleRateListTxt += '\0';
         }
 
+        bladerf_get_bandwidth_range(dev, selectedChannel, &range);
+
+        bandwidthList.clear();
+        bandwidthTxt = "";
+
+        for (int i = 0; i < range->max / range->min; i++) {
+            bandwidthList.push_back((range->min + range->min * i));
+            bandwidthTxt += getBandwdithScaled((range->min + range->min * i));
+            bandwidthTxt += '\0';
+        }
+
         // Load config here
         config.aquire();
         bool created = false;
         if (!config.conf["devices"].contains(selectedSerial)) {
             created = true;
             config.conf["devices"][selectedSerial]["sampleRate"]    = 800000;
+            config.conf["devices"][selectedSerial]["bandwidth"]     = 1500000;
             config.conf["devices"][selectedSerial]["agcMode"]       = 0;
             config.conf["devices"][selectedSerial]["lna"]           = 0;
             config.conf["devices"][selectedSerial]["rxvga1"]        = 5;
@@ -147,6 +159,20 @@ public:
                 if (sampleRateList[i] == selectedSr) {
                     srId = i;
                     sampleRate = selectedSr;
+                    break;
+                }
+            }
+        }
+
+        // Load bandwidth
+        bwId = 0;
+        bandwidth = bandwidthList[0];
+        if (config.conf["devices"][selectedSerial].contains("bandwidth")) {
+            int selectedSr = config.conf["devices"][selectedSerial]["bandwidth"];
+            for (int i = 0; i < bandwidthList.size(); i++) {
+                if (bandwidthList[i] == selectedSr) {
+                    bwId = i;
+                    bandwidth = selectedSr;
                     break;
                 }
             }
@@ -252,9 +278,9 @@ private:
 
         spdlog::info("Sample rate set to {0}", actualRate);
 
-        status = bladerf_set_bandwidth(_this->dev, _this->selectedChannel, 28000000, NULL);
+        status = bladerf_set_bandwidth(_this->dev, _this->selectedChannel, _this->bandwidth, NULL);
         if (status != 0) {
-            fprintf(stderr, "Failed to set bandwidth = %u: %s\n", 28000000,
+            fprintf(stderr, "Failed to set bandwidth = %u: %s\n", _this->bandwidth,
             bladerf_strerror(status));
             return;
         }
@@ -387,6 +413,9 @@ private:
             }
         }
 
+        ImGui::Text("Sample Rate:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::Combo(CONCAT("##_bladeRF_sr_sel_", _this->name), &_this->srId, _this->sampleRateListTxt.c_str())) {
             _this->sampleRate = _this->sampleRateList[_this->srId];
             core::setInputSampleRate(_this->sampleRate);
@@ -397,7 +426,19 @@ private:
             }
         }
 
+        ImGui::Text("Bandwidth:");
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (ImGui::Combo(CONCAT("##_bladeRF_bw_sel_", _this->name), &_this->bwId, _this->bandwidthTxt.c_str())) {
+            _this->bandwidth = _this->bandwidthList[_this->bwId];
+            if (_this->bandwidthTxt != "") {
+                config.aquire();
+                config.conf["devices"][_this->selectedSerial]["bandwidth"] = _this->bandwidth;
+                config.release(true);
+            }
+        }
+
+        //ImGui::SameLine();
         float refreshBtnWdith = menuWidth - ImGui::GetCursorPosX();
         if (ImGui::Button(CONCAT("Refresh##_bladeRF_refr_", _this->name), ImVec2(refreshBtnWdith, 0))) {
             _this->refresh();
@@ -411,7 +452,7 @@ private:
         ImGui::Text("FPGA File:");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
-        if (_this->fileSelect.render("##_recorder_fold_" + _this->name)) {
+        if (_this->fileSelect.render("##_FPGA_bitstream_" + _this->name)) {
             if (_this->fileSelect.pathIsValid()) {
                 _this->bitstreamPath = _this->fileSelect.path;
             }
@@ -511,12 +552,14 @@ private:
     bool enabled = true;
     dsp::stream<dsp::complex_t> stream;
     double sampleRate;
+    uint32_t bandwidth;
     SourceManager::SourceHandler handler;
     bool running = false;
     double freq;
     std::string selectedSerial = "";
     int devId       = 0;
     int srId        = 0;
+    int bwId        = 0;
     int xbMode      = BLADERF_XB_NONE;
     int xb200Mode   = BLADERF_XB200_AUTO_1DB;
     float lna       = 0;
@@ -536,6 +579,9 @@ private:
     std::vector<uint32_t> sampleRateList;
     std::string sampleRateListTxt;
     
+    std::vector<uint32_t> bandwidthList;
+    std::string bandwidthTxt;
+
     /** [Opening a device] */
     struct bladerf *dev = NULL;
     struct bladerf_stream *bladerfStream;
