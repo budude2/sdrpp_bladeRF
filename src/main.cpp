@@ -9,6 +9,7 @@
 #include <options.h>
 #include <libbladeRF.h>
 #include <gui/widgets/stepped_slider.h>
+#include <gui/widgets/file_select.h>
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
@@ -29,7 +30,7 @@ const char* XB_200_STR = "50M\000144M\000222M\0CUSTOM\0AUTO_1DB\0AUTO_3DB\0";
 
 class bladeRFSourceModule : public ModuleManager::Instance {
 public:
-    bladeRFSourceModule(std::string name) {
+    bladeRFSourceModule(std::string name) : fileSelect("") {
         this->name = name;
 
         sampleRate = 800000;
@@ -222,6 +223,17 @@ private:
             return;
         }
 
+        if(!_this->bitstreamPath.empty())
+        {
+            spdlog::info("Loading bitstream: {0}", _this->bitstreamPath);
+            status = bladerf_load_fpga(_this->dev, _this->bitstreamPath.c_str());
+            if (status != 0) {
+                spdlog::error("Error loading bitstream - bladeRF {0}", _this->selectedSerial);
+                spdlog::error(bladerf_strerror(status));
+                return;
+            }
+        }
+
         status = bladerf_is_fpga_configured(_this->dev);
         if (status != 1) {
             spdlog::error("{0} FPGA NOT LOADED", _this->selectedSerial);
@@ -396,6 +408,15 @@ private:
             core::setInputSampleRate(_this->sampleRate);
         }
 
+        ImGui::Text("FPGA File:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
+        if (_this->fileSelect.render("##_recorder_fold_" + _this->name)) {
+            if (_this->fileSelect.pathIsValid()) {
+                _this->bitstreamPath = _this->fileSelect.path;
+            }
+        }
+
         ImGui::Text("Expansion Board");
         ImGui::SameLine();
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
@@ -531,6 +552,8 @@ private:
     /** [struct channel_config] */
 
     std::thread workerThread;
+    FileSelect fileSelect;
+    std::string bitstreamPath = "";
 };
 
 MOD_EXPORT void _INIT_() {
