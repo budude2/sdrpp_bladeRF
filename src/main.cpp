@@ -83,6 +83,7 @@ public:
             devList.push_back(devSerial);
             devListTxt += devSerial;
         }
+        bladerf_free_device_list(dev_info);
     }
 
     void selectFirst() {
@@ -224,6 +225,7 @@ private:
         status = bladerf_is_fpga_configured(_this->dev);
         if (status != 1) {
             spdlog::error("{0} FPGA NOT LOADED", _this->selectedSerial);
+            bladerf_close(_this->dev);
             return;
         }
 
