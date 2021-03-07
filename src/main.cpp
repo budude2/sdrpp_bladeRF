@@ -113,7 +113,7 @@ public:
         const struct bladerf_range* range;
 
         // Original bladeRF only has 1 input channel, will need to change argument 2 to a variable for the new bladeRF
-        bladerf_get_sample_rate_range(dev, BLADERF_CHANNEL_RX(0), &range);
+        bladerf_get_sample_rate_range(dev, selectedChannel, &range);
 
         sampleRateList.clear();
         sampleRateListTxt = "";
@@ -128,12 +128,12 @@ public:
         bool created = false;
         if (!config.conf["devices"].contains(selectedSerial)) {
             created = true;
-            config.conf["devices"][selectedSerial]["sampleRate"] = 800000;
-            config.conf["devices"][selectedSerial]["agcMode"] = 0;
-            config.conf["devices"][selectedSerial]["lna"] = 0;
-            config.conf["devices"][selectedSerial]["rxvga1"] = 5;
-            config.conf["devices"][selectedSerial]["rxvga2"] = 0;
-            config.conf["devices"][selectedSerial]["xbMode"] = 0;
+            config.conf["devices"][selectedSerial]["sampleRate"]    = 800000;
+            config.conf["devices"][selectedSerial]["agcMode"]       = 0;
+            config.conf["devices"][selectedSerial]["lna"]           = 0;
+            config.conf["devices"][selectedSerial]["rxvga1"]        = 5;
+            config.conf["devices"][selectedSerial]["rxvga2"]        = 0;
+            config.conf["devices"][selectedSerial]["xbMode"]        = 0;
         }
 
         // Load sample rate
@@ -208,10 +208,6 @@ private:
 
         struct bladerf_devinfo dev_info;
         int status;
-
-        struct bladerf_stream *bladerfStream;
-        _this->bladerfStream = bladerfStream;
-
         
         /* Initialize the information used to identify the desired device
          * to all wildcard (i.e., "any device") values */
@@ -225,9 +221,15 @@ private:
             return;
         }
 
+        status = bladerf_is_fpga_configured(_this->dev);
+        if (status != 1) {
+            spdlog::error("{0} FPGA NOT LOADED", _this->selectedSerial);
+            return;
+        }
+
         bladerf_sample_rate actualRate;
 
-        status = bladerf_set_sample_rate(_this->dev, BLADERF_CHANNEL_RX(0), _this->sampleRateList[_this->srId], &actualRate);
+        status = bladerf_set_sample_rate(_this->dev, _this->selectedChannel, _this->sampleRateList[_this->srId], &actualRate);
         if (status != 0) {
             spdlog::error("Could not set sample rate on bladeRF {0}", _this->selectedSerial);
             spdlog::error(bladerf_strerror(status));
@@ -236,14 +238,14 @@ private:
 
         spdlog::info("Sample rate set to {0}", actualRate);
 
-        status = bladerf_set_bandwidth(_this->dev, BLADERF_CHANNEL_RX(0), 28000000, NULL);
+        status = bladerf_set_bandwidth(_this->dev, _this->selectedChannel, 28000000, NULL);
         if (status != 0) {
             fprintf(stderr, "Failed to set bandwidth = %u: %s\n", 28000000,
             bladerf_strerror(status));
             return;
         }
 
-        status = bladerf_set_frequency(_this->dev, BLADERF_CHANNEL_RX(0), _this->freq);
+        status = bladerf_set_frequency(_this->dev, _this->selectedChannel, _this->freq);
         if (status != 0) {
             spdlog::error("Could not set frequency rate on bladeRF {0}", _this->selectedSerial);
             spdlog::error(bladerf_strerror(status));
@@ -266,27 +268,59 @@ private:
             _this->num_transfers,
             _this->stream_timeout);
 
-        status = bladerf_enable_module(_this->dev, BLADERF_CHANNEL_RX(0), true);
-        if (status < 0) {
-            fprintf(stderr, "Failed to enable module: %s\n",
-            bladerf_strerror(status));
-            bladerf_deinit_stream(bladerfStream);
+        status = bladerf_enable_module(_this->dev, _this->selectedChannel, true);
+        if (status != 0) {
+            spdlog::error(bladerf_strerror(status));
+            bladerf_deinit_stream(_this->bladerfStream);
             bladerf_close(_this->dev);
             return;
         }
 
-        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "lna", _this->lna);
-        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga1", _this->rxvga1);
-        bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga2", _this->rxvga2);
-
-        if(_this->xbMode == BLADERF_XB_200)
-        {
-            bladerf_expansion_attach(_this->dev, BLADERF_XB_200);
-            bladerf_xb200_set_path(_this->dev, BLADERF_CHANNEL_RX(0), BLADERF_XB200_MIX);
-            bladerf_xb200_set_filterbank(_this->dev, BLADERF_CHANNEL_RX(0), (bladerf_xb200_filter)_this->xb200Mode);
+        status = bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "lna", _this->lna);
+        if (status != 0) {
+            spdlog::error("LNA setrror on bladeRF {0}", _this->selectedSerial);
+            spdlog::error(bladerf_strerror(status));
+            return;
         }
-        else {
-            bladerf_xb200_set_path(_this->dev, BLADERF_CHANNEL_RX(0), BLADERF_XB200_BYPASS);
+
+        status = bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "rxvga1", _this->rxvga1);
+        if (status != 0) {
+            spdlog::error("rxVGA1 set error on bladeRF {0}", _this->selectedSerial);
+            spdlog::error(bladerf_strerror(status));
+            return;
+        }
+
+        status = bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "rxvga2", _this->rxvga2);
+        if (status != 0) {
+            spdlog::error("rxVGA2 set error on bladeRF {0}", _this->selectedSerial);
+            spdlog::error(bladerf_strerror(status));
+            return;
+        }
+
+        if(_this->xbMode == BLADERF_XB_200) {
+            status = bladerf_expansion_attach(_this->dev, BLADERF_XB_200);
+            if (status != 0) {
+                spdlog::error("Expansion add error on bladeRF {0}", _this->selectedSerial);
+                spdlog::error(bladerf_strerror(status));
+                return;
+            }
+
+
+            status = bladerf_xb200_set_path(_this->dev, _this->selectedChannel, BLADERF_XB200_MIX);
+            if (status != 0) {
+                spdlog::error("xb200 path error on bladeRF {0}", _this->selectedSerial);
+                spdlog::error(bladerf_strerror(status));
+                return;
+            }
+
+            status = bladerf_xb200_set_filterbank(_this->dev, _this->selectedChannel, (bladerf_xb200_filter)_this->xb200Mode);
+            if (status != 0) {
+                spdlog::error("xb200 filterbank error on bladeRF {0}", _this->selectedSerial);
+                spdlog::error(bladerf_strerror(status));
+                return;
+            }
+        } else {
+            bladerf_xb200_set_path(_this->dev, _this->selectedChannel, BLADERF_XB200_BYPASS);
         }
 
         _this->running = true;
@@ -377,11 +411,11 @@ private:
             ImGui::SameLine();
             ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
             if (ImGui::Combo(CONCAT("##_bladeRF_xb200_", _this->name), &_this->xb200Mode, XB_200_STR)) {
-                // if (_this->selectedSerial != "") {
-                //     config.aquire();
-                //     config.conf["devices"][_this->selectedSerial]["xbMode"] = _this->xbMode;
-                //     config.release(true);
-                // }
+                if (_this->selectedSerial != "") {
+                    config.aquire();
+                    config.conf["devices"][_this->selectedSerial]["xbMode"] = _this->xbMode;
+                    config.release(true);
+                }
             }
         }
 
@@ -392,7 +426,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_lna_", _this->name), &_this->lna, 0, 6, 3, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "lna", _this->lna);
+                bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "lna", _this->lna);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -406,7 +440,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga1_", _this->name), &_this->rxvga1, 5, 30, 1, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga1", _this->rxvga1);
+                bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "rxvga1", _this->rxvga1);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -420,7 +454,7 @@ private:
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::SliderFloatWithSteps(CONCAT("##_bladeRF_rxvga2_", _this->name), &_this->rxvga2, 0, 30, 1, "%.0f dB")) {
             if (_this->running) {
-                bladerf_set_gain_stage(_this->dev, BLADERF_CHANNEL_RX(0), "rxvga2", _this->rxvga2);
+                bladerf_set_gain_stage(_this->dev, _this->selectedChannel, "rxvga2", _this->rxvga2);
             }
             if (_this->selectedSerial != "") {
                 config.aquire();
@@ -462,10 +496,10 @@ private:
     int srId        = 0;
     int xbMode      = BLADERF_XB_NONE;
     int xb200Mode   = BLADERF_XB200_AUTO_1DB;
-    bool hfLNA      = false;
     float lna       = 0;
     float rxvga1    = 5;
     float rxvga2    = 0;
+    bladerf_channel selectedChannel = BLADERF_CHANNEL_RX(0);
 
     bladerf_channel_layout  channel_layout;
     bladerf_format          format;
